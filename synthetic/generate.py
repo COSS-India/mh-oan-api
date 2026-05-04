@@ -201,7 +201,7 @@ async def run_conversation(
         if is_end:
             completed = True
             break
-        mod_input = build_moderation_input(user_output, agrinet_history, limit=3)        
+        mod_input = build_moderation_input(user_text_english, agrinet_history, limit=3)        
         mod_result = await moderation_agent.run(mod_input)
 
         # For Bhili: English system prompt + English query to LLM; Bhili text for search_terms only

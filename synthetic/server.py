@@ -383,13 +383,14 @@ async def simulate(req: SimulateRequest, request: Request):
                 else:
                     user_text_for_processing = user_text
 
-                mod_input = build_moderation_input(user_text_for_processing, agrinet_history, limit=3)
+                mod_input = build_moderation_input(_user_text_en, agrinet_history, limit=3)
                 mod_result = await moderation_agent.run(mod_input)
 
                 agrinet_lang_code = "en" if current_target_lang == "bhb" else current_target_lang
 
                 farmer_ctx = FarmerContext(
                     query=user_text_for_processing,
+                    bhili_query=user_text if current_target_lang == 'bhb' else None,
                     lang_code=agrinet_lang_code,
                     session_id=env.session_id,
                     today_date=env.today_date,
