@@ -70,6 +70,7 @@ async def generate_one(convo_id: str) -> dict:
     # Pick a random window
     windowed_history = _random_history_window(agrinet_history, window=3)
 
+    agrinet_lang = "mr" if env["target_language"] == "bhb" else env["target_language"]
     farmer_ctx = FarmerContext(
         query="",
         lang_code=env["target_language"],
@@ -100,8 +101,8 @@ async def generate_one(convo_id: str) -> dict:
 
     suggestions_out: list[str] = list(result.output)
     if env["target_language"] == "bhb" and suggestions_out:
-        en_to_bhili = BhashiniTranslator(source_lang="en", target_lang="bhb")
-        suggestions_out = await en_to_bhili.translate_texts([str(s) for s in suggestions_out])
+        mr_to_bhili = BhashiniTranslator(source_lang="mr", target_lang="bhb")
+        suggestions_out = await mr_to_bhili.translate_texts([str(s) for s in suggestions_out])
 
     return {
         "id": str(uuid4()),

@@ -34,7 +34,7 @@ class FarmerContext(BaseModel):
     Extends the production FarmerContext with additional fields needed
     for mock tools to return data consistent with the simulated farmer.
     """
-    query: str = Field(description="The user's question in English.")
+    query: str = Field(description="The user's question in marathi.")
     bhili_query: Optional[str] = Field(default=None, description="Bhili translation of the query, used for search term extraction via glossary.")
     lang_code: str = Field(description="The language code of the user's question.", default='mr')
     session_id: str = Field(description="The session ID for the conversation.")

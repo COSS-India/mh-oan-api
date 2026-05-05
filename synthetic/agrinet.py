@@ -33,8 +33,10 @@ def get_system_prompt(ctx: RunContext[FarmerContext]):
     deps = ctx.deps
     lang_code = deps.lang_code or 'en'
 
-    # Map Bhili to English for prompt selection
-    prompt_lang = 'en' if lang_code == 'bhb' else lang_code
+    # For Bhili (bhb) sessions, generate.py sets lang_code to 'mr' so the
+    # agrinet LLM responds in Marathi and is translated to Bhili via NMT.
+    # This fallback maps any direct bhb invocation to 'mr' as well.
+    prompt_lang = 'mr' if lang_code == 'bhb' else lang_code
     
     prompt_name = f'agrinet_system_{prompt_lang}'
     return get_prompt(prompt_name, context={

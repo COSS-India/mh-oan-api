@@ -31,14 +31,14 @@ def get_system_prompt():
     return get_prompt(prompt_name)
 
 
-async def improve_bhb_translation(en_text: str, bhb_text: str) -> str:
+async def improve_bhb_translation(source_text: str, bhb_text: str) -> str:
     """
-    Improve the Bhili translation of the given English text.
+    Improve the Bhili translation of the given Marathi source text.
     """
     user_prompt = f"""## Task: Correct this machine-translated Bhili text
 
-### English Source (reference for meaning and formatting):
-{en_text}
+### Marathi source (reference for meaning and formatting):
+{source_text}
 
 ---
 
@@ -48,13 +48,13 @@ async def improve_bhb_translation(en_text: str, bhb_text: str) -> str:
 ---
 
 ### Correction Instructions:
-1. **Read the English source** to understand the exact meaning, structure, and formatting.
+1. **Read the Marathi source** to understand the exact meaning, structure, and formatting.
 2. **Identify errors in the draft** — look for:
    - Marathi grammar leaking in (चा/ची/चे instead of ना/नी/नू, आहे instead of शे, -ावे/-ायला instead of -नं)
    - Lazy transliterations of farming terms (use खत not फर्टिलायझर, नत्र not नायट्रोजन, etc.)
    - Unnatural sentence structure that doesn't sound like spoken Nandurbar Bhili
    - Any Roman alphabet characters
-3. **Output ONLY the corrected Bhili translation** — match the English source formatting exactly (bold, bullets, line breaks)."""
+3. **Output ONLY the corrected Bhili translation** — match the Marathi source formatting exactly (bold, bullets, line breaks)."""
 
     result = await translator_agent.run(user_prompt)
     return result.output

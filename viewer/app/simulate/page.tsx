@@ -39,7 +39,7 @@ interface StreamItem {
   kind: "user" | "agent" | "typing" | "language_switch";
   turn_number: number;
   text: string;
-  text_en?: string;  // English original (set for bhb conversations)
+  text_mr?: string;  // Hub text before Bhili (e.g. Marathi; set for bhb conversations)
   tool_calls?: { tool_name: string; args: string }[];
 }
 
@@ -166,11 +166,11 @@ export default function SimulatePage() {
         break;
       }
       case "user_message": {
-        const d = data as { turn_number: number; text: string; text_en?: string; is_end: boolean };
+        const d = data as { turn_number: number; text: string; text_mr?: string; is_end: boolean };
         setItems((prev) => prev.filter((i) => i.kind !== "typing"));
         setItems((prev) => [
           ...prev,
-          { kind: "user", turn_number: d.turn_number, text: d.text, text_en: d.text_en },
+          { kind: "user", turn_number: d.turn_number, text: d.text, text_mr: d.text_mr },
         ]);
         if (!d.is_end) {
           setItems((prev) => [
@@ -185,7 +185,7 @@ export default function SimulatePage() {
         const d = data as {
           turn_number: number;
           text: string;
-          text_en?: string;
+          text_mr?: string;
           tool_calls: { tool_name: string; args: string }[];
         };
         setItems((prev) => prev.filter((i) => i.kind !== "typing"));
@@ -195,7 +195,7 @@ export default function SimulatePage() {
             kind: "agent",
             turn_number: d.turn_number,
             text: d.text,
-            text_en: d.text_en,
+            text_mr: d.text_mr,
             tool_calls: d.tool_calls,
           },
         ]);
@@ -254,10 +254,10 @@ export default function SimulatePage() {
                   {item.text}
                 </ReactMarkdown>
               </div>
-              {item.text_en && item.text_en !== item.text && (
+              {item.text_mr && item.text_mr !== item.text && (
                 <div className="mt-2 pt-2 border-t border-green-300 dark:border-green-800 text-xs italic opacity-60">
-                  <span className="not-italic font-medium opacity-80">EN:</span>
-                  {item.text_en}
+                  <span className="not-italic font-medium opacity-80">Marathi:</span>
+                  {item.text_mr}
                 </div>
               )}
             </div>
@@ -288,10 +288,10 @@ export default function SimulatePage() {
                   {item.text}
                 </ReactMarkdown>
               </div>
-              {item.text_en && item.text_en !== item.text && (
+              {item.text_mr && item.text_mr !== item.text && (
                 <div className="mt-2 pt-2 border-t border-blue-300 dark:border-blue-800 text-xs italic opacity-60">
-                  <span className="not-italic font-medium opacity-80">EN:</span>
-                  {item.text_en}
+                  <span className="not-italic font-medium opacity-80">Marathi:</span>
+                  {item.text_mr}
                 </div>
               )}
             </div>

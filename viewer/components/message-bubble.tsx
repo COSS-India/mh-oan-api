@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 interface MessageBubbleProps {
   role: "user" | "agent";
   content: string;
-  contentEn?: string;  // English original (shown for Bhili conversations)
+  contentMr?: string;  // Marathi original (shown for Bhili conversations)
 }
 
-export function MessageBubble({ role, content, contentEn }: MessageBubbleProps) {
+export function MessageBubble({ role, content, contentMr }: MessageBubbleProps) {
   const isUser = role === "user";
 
   return (
@@ -29,15 +29,15 @@ export function MessageBubble({ role, content, contentEn }: MessageBubbleProps) 
         <div className="prose prose-sm dark:prose-invert max-w-none [&_p]:mb-1 [&_p:last-child]:mb-0">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
-        {contentEn && contentEn !== content && (
+        {contentMr && contentMr !== content && (
           <div className={cn(
             "mt-2 pt-2 border-t text-xs italic opacity-60",
             isUser
               ? "border-green-300 dark:border-green-800"
               : "border-blue-300 dark:border-blue-800"
           )}>
-            <span className="italic font-medium opacity-80">EN:</span>
-            {contentEn}
+            <span className="italic font-medium opacity-80">Marathi:</span>
+            {contentMr}
           </div>
         )}
       </div>

@@ -30,8 +30,8 @@ suggestions_agent = Agent(
 def get_system_prompt(ctx: RunContext[FarmerContext]):
     deps = ctx.deps
     lang_code = deps.lang_code or "en"
-    # Bhili: use English instructions; outputs are translated to Bhili in generate_suggestions.
-    prompt_lang = "en" if lang_code == "bhb" else lang_code
+    # Bhili surface: farmer_ctx uses mr hub; outputs are NMT'd to Bhili in generate_suggestions.
+    prompt_lang = "mr" if lang_code == "bhb" else lang_code
     prompt_name = f"suggestions_{prompt_lang}"
     return get_prompt(prompt_name, context={
         'today_date': deps.get_today_date_str(),

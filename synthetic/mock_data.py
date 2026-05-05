@@ -341,17 +341,17 @@ MOOD_WEIGHTS = {
 
 # MH-OAN supports Marathi, Hindi, and English
 LANGUAGE_WEIGHTS = {
-    "mr": 0.01,
-    "hi": 0.01,
-    "en": 0.01,
-    "bhb": 0.97,
+    "mr": 0.00,
+    "hi": 0.00,
+    "en": 0.00,
+    "bhb": 1.0,
 }
 
 TARGET_LANGUAGE_WEIGHTS = {
-    "mr": 0.01,
-    "hi": 0.01,
-    "en": 0.01,
-    "bhb": 0.97,
+    "mr": 0.00,
+    "hi": 0.00,
+    "en": 0.00,
+    "bhb": 1.0,
 }
 
 LATIN_SCRIPT_PROBABILITY = 0.10  # Higher for MH — many farmers type Marathi in Roman
