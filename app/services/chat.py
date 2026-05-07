@@ -1,4 +1,5 @@
 from typing import AsyncGenerator
+import os
 from fastapi import BackgroundTasks
 from agents.agrinet import agrinet_agent
 # from agents.moderation import moderation_agent  # moderation pipeline disabled
@@ -86,27 +87,42 @@ async def stream_chat_messages(
     
     logger.info(f"Trimmed history length: {len(trimmed_history)} messages")
 
-    async with agrinet_agent.run_stream(
-        user_prompt=user_message,
-        message_history=trimmed_history,
-        deps=deps,
-    ) as response_stream:
-        if is_bhili:
-            buffer = ""
-            async for chunk in response_stream.stream_text(delta=True):
-                buffer += chunk
-                while "\n\n" in buffer:
-                    paragraph, buffer = buffer.split("\n\n", 1)
-                    translated = await _translate_paragraph(paragraph, "en", "bhb")
-                    yield translated + "\n\n"
-            if buffer.strip():
-                yield await _translate_paragraph(buffer, "en", "bhb")
-        else:
-            async for chunk in response_stream.stream_text(delta=True):
-                yield chunk
-        
-        logger.info(f"Streaming complete for session {session_id}")
-        new_messages = response_stream.new_messages()
+    streaming_enabled = (os.getenv("AGRINET_STREAMING_ENABLED", "true") or "").strip().lower() in {"1", "true", "yes"}
+
+    if streaming_enabled:
+        async with agrinet_agent.run_stream(
+            user_prompt=user_message,
+            message_history=trimmed_history,
+            deps=deps,
+        ) as response_stream:
+            if is_bhili:
+                buffer = ""
+                async for chunk in response_stream.stream_text(delta=True):
+                    buffer += chunk
+                    while "\n\n" in buffer:
+                        paragraph, buffer = buffer.split("\n\n", 1)
+                        translated = await _translate_paragraph(paragraph, "en", "bhb")
+                        yield translated + "\n\n"
+                if buffer.strip():
+                    yield await _translate_paragraph(buffer, "en", "bhb")
+            else:
+                async for chunk in response_stream.stream_text(delta=True):
+                    yield chunk
+
+            logger.info(f"Streaming complete for session {session_id}")
+            new_messages = response_stream.new_messages()
+    else:
+        result = await agrinet_agent.run(
+            user_prompt=user_message,
+            message_history=trimmed_history,
+            deps=deps,
+        )
+        text = (result.output or "").strip()
+        if is_bhili and text:
+            text = await _translate_paragraph(text, "en", "bhb")
+        if text:
+            yield text
+        new_messages = result.new_messages()
 
     messages = [
         *history,
