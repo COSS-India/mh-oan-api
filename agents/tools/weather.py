@@ -1,453 +1,148 @@
 import os
-import uuid
 from datetime import datetime, timedelta, timezone
 from helpers.utils import get_logger, get_today_date_str
 import httpx
-from pydantic import BaseModel, AnyHttpUrl, Field
-from typing import List, Optional, Dict, Any, Tuple
-from dateutil import parser
-from dateutil.parser import ParserError
+from typing import Optional
 from pydantic_ai import ModelRetry, UnexpectedModelBehavior
 from dotenv import load_dotenv
 
 load_dotenv()
-
 logger = get_logger(__name__)
 
 # -----------------------
-# Images
+# Weather Code Mapping
 # -----------------------
-class Image(BaseModel):
-    url: AnyHttpUrl
 
-# -----------------------
-# Descriptor
-# -----------------------
-class Descriptor(BaseModel):
-    code: Optional[str] = None
-    name: Optional[str] = None
-    short_desc: Optional[str] = None
-    long_desc: Optional[str] = None
-    images: Optional[List[Image]] = None
+def weather_code_to_text(code: Optional[int]) -> str:
+    """Map Open-Meteo WMO weather code to a human-readable description."""
+    if code is None:
+        return "Unknown"
+    mapping = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        56: "Light freezing drizzle",
+        57: "Dense freezing drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Light freezing rain",
+        67: "Heavy freezing rain",
+        71: "Slight snow fall",
+        73: "Moderate snow fall",
+        75: "Heavy snow fall",
+        77: "Snow grains",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail",
+    }
+    return mapping.get(code, "Unknown")
 
-    def is_date(self) -> Tuple[bool, Optional[datetime]]:
-        """Check if the descriptor code or name contains a parseable date.
-        
-        Returns:
-            Tuple[bool, Optional[datetime]]: (True, datetime_obj) if date found, (False, None) if not
-        """
-        try:
-            # Try code first as it's more likely to contain the date
-            if self.code:
-                return True, parser.parse(self.code, fuzzy=True)
-            # Try name if code didn't work
-            if self.name:
-                return True, parser.parse(self.name, fuzzy=True)
-            return False, None
-        except (ParserError, TypeError, ValueError):
-            return False, None
-
-    def __str__(self) -> str:
-        """Return the 'name' or 'code' if present, else empty."""
-        if self.name:
-            return self.name
-        elif self.code:
-            return self.code
-        return ""
-
-# -----------------------
-# Country & Location
-# -----------------------
-class Country(BaseModel):
-    name: Optional[str] = None  
-    code: Optional[str] = None
-
-class Location(BaseModel):
-    country: Optional[Country] = None
 
 # -----------------------
-# Context
+# Response Formatting
 # -----------------------
-class Context(BaseModel):
-    ttl: Optional[str] = None
-    action: str
-    timestamp: str
-    message_id: str
-    transaction_id: str
-    domain: str
-    version: str
-    # Mark optional if not always present
-    bap_id: Optional[str] = None
-    bap_uri: Optional[AnyHttpUrl] = None
-    bpp_id: Optional[str] = None
-    bpp_uri: Optional[AnyHttpUrl] = None
-    country: Optional[str] = None
-    city: Optional[str] = None
-    location: Optional[Location] = None
 
-# -----------------------
-# TagItem & Tag
-# -----------------------
-class TagItem(BaseModel):
-    descriptor: Descriptor
-    value: str
+def _format_weather_response(
+    data: dict,
+    location_name: str,
+    response_type: str = "forecast"
+) -> str:
+    """Format Open-Meteo JSON response into a readable string for the LLM."""
+    lines = []
+    today_str = get_today_date_str()
 
-    def __str__(self) -> str:
-        desc_name = self.descriptor.name or self.descriptor.code or "Tag"
-        return f"{desc_name}: {self.value}"
+    if response_type == "historical":
+        lines.append(f"**Weather Historical Data** [Today's Date: {today_str}]")
+    else:
+        lines.append(f"**Weather Forecast Data** [Today's Date: {today_str}]")
 
-class Tag(BaseModel):
-    descriptor: Descriptor
-    list: List[TagItem]
+    lat = data.get("latitude")
+    lon = data.get("longitude")
+    lines.append(f"Location: {location_name} (Latitude: {lat}, Longitude: {lon})")
+    lines.append("")
 
-    def __str__(self) -> str:
-        """Example format:
-           TagGroupName:
-               TagItem1
-               TagItem2
-        """
-        # heading = self.descriptor.name or self.descriptor.code or "Tag Group"
-        items_str = "\n      ".join(str(tag_item) for tag_item in self.list)
-        return items_str
+    # Current weather (forecast only)
+    current = data.get("current_weather")
+    if current and response_type == "forecast":
+        temp = current.get("temperature")
+        wind = current.get("windspeed")
+        wind_dir = current.get("winddirection")
+        code = current.get("weathercode")
+        desc = weather_code_to_text(code)
 
-# -----------------------
-# TimeRange, Time, Stop, Fulfillment
-# -----------------------
-class TimeRange(BaseModel):
-    start: str
-    end: str
+        lines.append("Current Weather:")
+        lines.append(f"  - Temperature: {temp}°C")
+        lines.append(f"  - Wind Speed: {wind} km/h")
+        lines.append(f"  - Wind Direction: {wind_dir}°")
+        lines.append(f"  - Condition: {desc}")
+        lines.append("")
 
-class Time(BaseModel):
-    range: TimeRange
+    # Hourly forecast (next 5 hours, forecast only)
+    hourly = data.get("hourly")
+    if hourly and response_type == "forecast":
+        times = hourly.get("time", [])[:5]
+        temps = hourly.get("temperature_2m", [])[:5]
+        precips = hourly.get("precipitation", [])[:5]
+        codes = hourly.get("weathercode", [])[:5]
 
-class Stop(BaseModel):
-    time: Time
+        if times:
+            lines.append("Next Hours:")
+            for t, temp, precip, code in zip(times, temps, precips, codes):
+                try:
+                    dt = datetime.fromisoformat(t)
+                    time_str = dt.strftime("%H:%M")
+                except (ValueError, TypeError):
+                    time_str = str(t)
 
-class Fulfillment(BaseModel):
-    id: str
-    stops: Optional[List[Stop]] = None
+                desc = weather_code_to_text(code)
+                lines.append(
+                    f"  - {time_str}: {temp}°C, {precip}mm rain, {desc}"
+                )
+            lines.append("")
 
-    def __str__(self) -> str:
-        lines = [f"Fulfillment ID: {self.id}"]
-        if self.stops:
-            lines.append("  Stops:")
-            for stop in self.stops:
-                if stop.time.range.start and stop.time.range.end:
-                    stop_start = parser.parse(stop.time.range.start)
-                    stop_end = parser.parse(stop.time.range.end)
-                    lines.append(f"    - Start: {stop_start.strftime('%Y-%m-%d')}, End: {stop_end.strftime('%Y-%m-%d')}")
-        return "\n".join(lines)
+    # Daily data
+    daily = data.get("daily")
+    if daily:
+        times = daily.get("time", [])
+        max_temps = daily.get("temperature_2m_max", [])
+        min_temps = daily.get("temperature_2m_min", [])
+        precips = daily.get("precipitation_sum", [])
+        codes = daily.get("weathercode", [])
 
-# -----------------------
-# Category
-# -----------------------
-class Category(BaseModel):
-    id: str
-    descriptor: Descriptor
-
-    def __str__(self) -> str:
-        return self.descriptor.name or self.id
-
-# -----------------------
-# Item
-# -----------------------
-class Item(BaseModel):
-    id: str
-    descriptor: Descriptor
-    matched: bool
-    recommended: bool
-    category_ids: Optional[List[str]] = None
-    fulfillment_ids: Optional[List[str]] = None
-    tags: Optional[List[Tag]] = None
-
-    def __str__(self) -> str:
-        lines = []
-        # Item name / ID heading
-        lines.append(f"**Item:** {self.descriptor.name or self.id}")
-
-        # Short/Long
-        if self.descriptor.short_desc:
-            lines.append(f"  Short: {self.descriptor.short_desc}")
-        if self.descriptor.long_desc:
-            # strip() to remove trailing newlines
-            lines.append(f"  Long: {self.descriptor.long_desc.strip()}")
-
-        # Show tags
-        if self.tags:
-            lines.append("  Tags:")
-            for t in self.tags:
-                tag_str = str(t).replace("\n", "\n    ")
-                lines.append(f"    {tag_str}")
-
-        return "\n".join(lines)
-
-# -----------------------
-# Provider
-# -----------------------
-class Provider(BaseModel):
-    id: str
-    descriptor: Descriptor
-    categories: Optional[List[Category]] = None
-    fulfillments: Optional[List[Fulfillment]] = None
-    items: Optional[List[Item]] = None
-
-    def __str__(self) -> str:
-        lines = []
-        lines.append(f"Provider: {self.descriptor.name or self.id}")
-
-        if self.categories:
-            lines.append("  Categories:")
-            for cat in self.categories:
-                lines.append(f"    - {cat}")
-
-        if self.fulfillments:
-            lines.append("  Fulfillments:")
-            for f in self.fulfillments:
-                f_str = str(f).replace("\n", "\n    ")
-                lines.append(f"    {f_str}")
-
-        if self.items:
-            lines.append("  Items:")
-            for item in self.items:
-                item_str = str(item).replace("\n", "\n    ")
-                lines.append(f"    {item_str}")
-
-        return "\n".join(lines)
-
-# -----------------------
-# Catalog
-# -----------------------
-class Catalog(BaseModel):
-    descriptor: Descriptor
-    providers: List[Provider]
-
-    def __str__(self) -> str:
-        lines = []
-        lines.append(f"Catalog: {self.descriptor.name or 'N/A'}")
-        if self.providers:
-            lines.append("Providers:")
-            for provider in self.providers:
-                provider_str = str(provider).replace("\n", "\n  ")
-                lines.append(f"  {provider_str}")
-        return "\n".join(lines)
-
-# -----------------------
-# Message & ResponseItem
-# -----------------------
-class Message(BaseModel):
-    catalog: Catalog
-
-    def __str__(self) -> str:
-        return str(self.catalog)
-
-class ResponseItem(BaseModel):
-    context: Context
-    message: Message
-
-    def __str__(self) -> str:
-        # Optionally, you can logger.info context info here or just the catalog:
-        # e.g. f"Context: {self.context.transaction_id}\n{self.message}"
-        return str(self.message)
-
-# -----------------------
-# Weather Response
-# -----------------------
-class WeatherResponse(BaseModel):
-    context: Context
-    responses: List[ResponseItem]
-    response_type: str = Field(default="forecast", description="Type of response: 'forecast' or 'historical'")
-
-    def validate_dates(self, request_payload: Dict[str, Any]) -> bool:
-        """
-        Validate if the weather data is current based on the requested dates.
-        At least one date in the response should fall within the requested range.
-        
-        Args:
-            request_payload (Dict[str, Any]): The original request payload containing the date range
-            
-        Returns:
-            bool: True if at least one valid date is found, False if no dates are within range
-        """
-        try:
-            # Get requested date range from payload and ensure they're timezone aware
-            request_start = parser.parse(request_payload["message"]["intent"]["item"]["time"]["range"]["start"])
-            if request_start.tzinfo is None:
-                request_start = request_start.replace(tzinfo=timezone.utc)
-                
-            request_end = parser.parse(request_payload["message"]["intent"]["item"]["time"]["range"]["end"])
-            if request_end.tzinfo is None:
-                request_end = request_end.replace(tzinfo=timezone.utc)
-            
-            # Get response timestamp and ensure it's timezone aware
-            response_time = parser.parse(self.context.timestamp)
-            if response_time.tzinfo is None:
-                response_time = response_time.replace(tzinfo=timezone.utc)
-            
-            # Check if we have any responses
-            if not self.responses:
-                logger.warning("No weather forecast data found in response")
-                return False
-            
-            # Check if response timestamp is within 1 hour of request start time
-            time_diff = abs((response_time - request_start).total_seconds())
-            if time_diff > 3600:  # 3600 seconds = 1 hour
-                logger.warning(f"Weather data may be outdated. Response time: {response_time}, Request start: {request_start}")
-                return False
-                
-            # Track all dates found and their validity
-            dates_found = []
-            valid_dates = []
-            
-            # Iterate through all providers and their items to find dates
-            for response in self.responses:
-                for provider in response.message.catalog.providers:
-                    for item in provider.items or []:
-                        for tag in item.tags or []:
-                            is_date, date_obj = tag.descriptor.is_date()
-                            if is_date and date_obj:
-                                # Ensure the found date is timezone aware
-                                if date_obj.tzinfo is None:
-                                    date_obj = date_obj.replace(tzinfo=timezone.utc)
-                                dates_found.append(date_obj)
-                                # Check if the date is within our request range
-                                if request_start <= date_obj <= request_end:
-                                    valid_dates.append(date_obj)
-            
-            # Log the results
-            if dates_found:
-                logger.info(f"Found {len(dates_found)} dates in response, {len(valid_dates)} within requested range")
-                if valid_dates:
-                    logger.info(f"Valid dates: {', '.join(d.isoformat() for d in valid_dates)}")
-                else:
-                    logger.warning(f"All dates found were outside range [{request_start} - {request_end}]")
-                    logger.warning(f"Found dates: {', '.join(d.isoformat() for d in dates_found)}")
+        if times:
+            if response_type == "historical":
+                lines.append("Historical Daily Data:")
             else:
-                logger.warning("No dates found in weather data")
-            
-            # Return True if we found at least one valid date
-            return len(valid_dates) > 0
-            
-        except Exception as e:
-            logger.error(f"Error validating weather dates: {e}")
-            return False
+                lines.append("Daily Forecast:")
 
+            for t, tmax, tmin, precip, code in zip(
+                times, max_temps, min_temps, precips, codes
+            ):
+                desc = weather_code_to_text(code)
+                lines.append(
+                    f"  - {t}: Max {tmax}°C, Min {tmin}°C, "
+                    f"Rain {precip}mm, {desc}"
+                )
 
-    def _has_weather_data(self) -> bool:
-        """Check if there are any responses with providers that have items."""
-        for response in self.responses:
-            for provider in response.message.catalog.providers:
-                if provider.items and len(provider.items) > 0:
-                    return True
-        return False
-    
-    def __str__(self) -> str:
-        lines = []
-        
-        # Dynamic header based on response type
-        if self.response_type == "historical":
-            lines.append(f"**Weather Historical Data** [Today's Date: {get_today_date_str()}]")
-            no_data_message = "No historical weather data found for the requested location."
-        else:  # forecast
-            lines.append(f"**Weather Forecast Data** [Today's Date: {get_today_date_str()}]")
-            no_data_message = "No weather forecast data found for the requested location."
-    
-        # Check if there are any responses with providers that have items
-        has_weather_data = self._has_weather_data()
-        if len(self.responses) == 0 or not has_weather_data:
-            lines.append(no_data_message)
-            return "\n".join(lines)
-        else:
-            lines.append("Responses:")
-            for idx, rsp in enumerate(self.responses, start=1):
-                rsp_str = str(rsp).replace("\n", "\n  ")
-                lines.append(f"    {rsp_str}")
-            return "\n".join(lines)
+    return "\n".join(lines)
+
 
 # -----------------------
-# Weather Request
+# Weather Forecast
 # -----------------------
-class WeatherRequest(BaseModel):
-    """WeatherRequest model for weather forecast and historical data API.
-    
-    Args:
-        latitude (float): Latitude of the location, example: 12.9716
-        longitude (float): Longitude of the location, example: 77.5946
-        days (int): Number of days (defaults to 5 for forecast, 7 for historical)
-        request_type (str): "forecast" or "historical"
-    """
-    latitude: float  = Field(..., description="Latitude of the location")
-    longitude: float = Field(..., description="Longitude of the location")
-    days: int        = Field(default=None, description="Number of days. Auto-set based on request_type if not provided")
-    request_type: str = Field(default="forecast", description="Type of request: 'forecast' or 'historical'")
-    
-    def model_post_init(self, __context):
-        """Set default days based on request_type if not provided."""
-        if self.days is None:
-            self.days = 7 if self.request_type == "historical" else 5
-    
-    def get_payload(self) -> Dict[str, Any]:
-        """
-        Convert the WeatherRequest object to a dictionary compatible with MahaPoCRA Beckn API.
-        
-        Returns:
-            Dict[str, Any]: The dictionary representation of the request payload.
-        """
-        now = datetime.today()
-        
-        # Determine category name and time range based on request type
-        if self.request_type == "historical":
-            category_name = "Weather-Historical"
-            start_time = (now - timedelta(days=self.days)).astimezone(timezone.utc).strftime('%Y-%m-%dT00:00:00Z')
-            end_time = now.astimezone(timezone.utc).strftime('%Y-%m-%dT00:00:00Z')
-        else:  # forecast
-            category_name = "Weather-Forecast"
-            start_time = now.astimezone(timezone.utc).strftime('%Y-%m-%dT00:00:00Z')
-            end_time = (now + timedelta(days=self.days)).astimezone(timezone.utc).strftime('%Y-%m-%dT00:00:00Z')
-        
-        return {
-            "context": {
-                "ttl": "PT10M",
-                "action": "search",
-                "timestamp": now.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
-                "message_id": str(uuid.uuid4()),
-                "transaction_id": str(uuid.uuid4()),
-                "domain": "advisory:weather:mh-vistaar",
-                "version": "1.1.0",
-                "bap_id": os.getenv("BAP_ID"),
-                "bap_uri": os.getenv("BAP_URI"),
-                "bpp_id": os.getenv("POCRA_BPP_ID"),
-                "bpp_uri": os.getenv("POCRA_BPP_URI"),
-                "location": {
-                    "country": {"name": "India", "code": "IND"},
-                }
-            },
-            "message": {
-                "intent": {
-                    "category": {
-                        "descriptor": {
-                            "name": category_name
-                        }
-                    },
-                    "item": {
-                        "time": {
-                            "range": {
-                                "start": start_time,
-                                "end": end_time
-                            }
-                        }
-                    },
-                    "fulfillment": {
-                        "stops": [
-                            {"location": {"gps": f"{self.latitude}, {self.longitude}"}}
-                        ]
-                    }
-                }
-            }
-        }
 
-
-
-    
 async def weather_forecast(latitude: float, longitude: float, days: int = 5) -> str:
     """Get Weather forecast for a specific location.
 
@@ -455,77 +150,128 @@ async def weather_forecast(latitude: float, longitude: float, days: int = 5) -> 
         latitude (float): Latitude of the location
         longitude (float): Longitude of the location
         days (int): Number of days for weather forecast (defaults to 5)
-    
+
     Returns:
         str: The weather forecast for the specific location
-    """    
-    try:        
-        payload  = WeatherRequest(latitude=latitude, longitude=longitude, days=days, request_type="forecast").get_payload()
-        
+    """
+    try:
+        base_url = os.getenv(
+            "OPEN_METEO_FORECAST_URL",
+            "https://api.open-meteo.com/v1/forecast"
+        )
+        url = (
+            f"{base_url}?"
+            f"latitude={latitude}&longitude={longitude}"
+            "&current_weather=true"
+            "&hourly=temperature_2m,precipitation,weathercode"
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode"
+            "&timezone=auto"
+        )
+
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"),
-                                     json=payload,
-                                     timeout=15.0)
-        
+            response = await client.get(url, timeout=15.0)
+
         if response.status_code != 200:
-            logger.error(f"Weather API returned status code {response.status_code}")
+            logger.error(
+                f"Weather API returned status code {response.status_code}"
+            )
             return "Weather service unavailable. Retrying"
-            
-        weather_response = WeatherResponse.model_validate(response.json())
-        weather_response.response_type = "forecast"
-            
-        return str(weather_response)
-                
+
+        data = response.json()
+
+        if data.get("error"):
+            logger.error(
+                f"Weather API error: {data.get('reason', 'Unknown')}"
+            )
+            return "Weather service unavailable. Retrying"
+
+        location_name = f"{latitude}, {longitude}"
+        return _format_weather_response(
+            data, location_name, response_type="forecast"
+        )
+
     except httpx.TimeoutException:
         logger.error("Weather API request timed out")
         return "Weather request timed out."
     except httpx.RequestError as e:
         logger.error(f"Weather API request failed: {e}")
         return f"Weather request failed: {str(e)}"
-    except UnexpectedModelBehavior as e:
+    except UnexpectedModelBehavior:
         logger.warning("Weather request exceeded retry limit")
         return "Weather data is temporarily unavailable. Please try again later."
     except Exception as e:
         logger.error(f"Error getting weather forecast: {e}")
-        raise ModelRetry(f"Unexpected error in weather forecast. {str(e)}")
+        raise ModelRetry(
+            f"Unexpected error in weather forecast. {str(e)}"
+        )
 
-async def weather_historical(latitude: float, longitude: float, days: int = 5) -> str:
+
+# -----------------------
+# Weather Historical
+# -----------------------
+
+async def weather_historical(
+    latitude: float, longitude: float, days: int = 5
+) -> str:
     """Get historical weather data for a specific location.
 
     Args:
         latitude (float): Latitude of the location
         longitude (float): Longitude of the location
         days (int): Number of days for weather history (defaults to 5)
-    
+
     Returns:
         str: The historical weather data for the specific location
-    """    
-    try:        
-        payload  = WeatherRequest(latitude=latitude, longitude=longitude, days=days, request_type="historical").get_payload()
-        
+    """
+    try:
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=days)
+
+        base_url = os.getenv(
+            "OPEN_METEO_ARCHIVE_URL",
+            "https://archive-api.open-meteo.com/v1/archive"
+        )
+        url = (
+            f"{base_url}?"
+            f"latitude={latitude}&longitude={longitude}"
+            f"&start_date={start_date}&end_date={end_date}"
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode"
+            "&timezone=auto"
+        )
+
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"),
-                                     json=payload,
-                                     timeout=15.0)
-        
+            response = await client.get(url, timeout=15.0)
+
         if response.status_code != 200:
-            logger.error(f"Weather API returned status code {response.status_code}")
+            logger.error(
+                f"Weather API returned status code {response.status_code}"
+            )
             return "Weather service unavailable. Retrying"
-            
-        weather_response = WeatherResponse.model_validate(response.json())
-        weather_response.response_type = "historical"
-            
-        return str(weather_response)
-                
+
+        data = response.json()
+
+        if data.get("error"):
+            logger.error(
+                f"Weather API error: {data.get('reason', 'Unknown')}"
+            )
+            return "Weather service unavailable. Retrying"
+
+        location_name = f"{latitude}, {longitude}"
+        return _format_weather_response(
+            data, location_name, response_type="historical"
+        )
+
     except httpx.TimeoutException:
         logger.error("Weather API request timed out")
         return "Weather request timed out."
     except httpx.RequestError as e:
         logger.error(f"Weather API request failed: {e}")
         return f"Weather request failed: {str(e)}"
-    except UnexpectedModelBehavior as e:
+    except UnexpectedModelBehavior:
         logger.warning("Weather request exceeded retry limit")
         return "Weather data is temporarily unavailable. Please try again later."
     except Exception as e:
         logger.error(f"Error getting weather historical data: {e}")
-        raise ModelRetry(f"Unexpected error in weather historical data. {str(e)}")
+        raise ModelRetry(
+            f"Unexpected error in weather historical data. {str(e)}"
+        )
