@@ -7,10 +7,30 @@ from app.models.requests import ChatRequest
 from app.core.limiter import limiter
 from helpers.utils import get_logger
 import uuid
+import json
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+async def _as_sse(text_iter):
+    """
+    Wrap plain text chunks as Server-Sent Events.
+    Many clients (EventSource) require the 'data:' framing.
+    """
+    async for chunk in text_iter:
+        if chunk is None:
+            continue
+        data = str(chunk)
+        if not data:
+            continue
+        # Ensure each SSE message is a single event.
+        for line in data.splitlines() or [""]:
+            yield f"data: {line}\n"
+        yield "\n"
+    yield "data: [DONE]\n\n"
+
 
 @router.get("/")
 @limiter.limit("1000/hour")
@@ -36,7 +56,7 @@ async def chat_endpoint(
     logger.debug(f"Retrieved message history for session {session_id} - length: {len(history)}")
 
     return StreamingResponse(
-        stream_chat_messages(
+        _as_sse(stream_chat_messages(
             query=chat_request.query,
             session_id=session_id,
             source_lang=chat_request.source_lang,
@@ -45,6 +65,6 @@ async def chat_endpoint(
             history=history,
             user_info=user_info,
             background_tasks=background_tasks
-        ),
+        )),
         media_type="text/event-stream"
     )
