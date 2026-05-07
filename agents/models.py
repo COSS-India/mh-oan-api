@@ -4,7 +4,6 @@ from openai import AsyncOpenAI, APIError
 import httpx
 import os
 from pydantic_ai import UsageLimits
-from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.exceptions import ModelAPIError, ConcurrencyLimitExceeded, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
@@ -93,7 +92,10 @@ def _normalize_openai_base_url(url: str) -> str:
 
 
 def _make_vllm_model(model_name, base_url, settings):
+    raw_url = base_url
     base_url = _normalize_openai_base_url(base_url)
+    if raw_url != base_url:
+        logger.info(f"Normalized VLLM base_url from '{raw_url}' to '{base_url}'")
     return OpenAIChatModel(
         model_name,
         provider=OpenAIProvider(openai_client=AsyncOpenAI(
@@ -119,16 +121,22 @@ def _make_azure_model():
     )
 
 
-azure_model = _make_azure_model()
+def _provider() -> str:
+    return (os.getenv("LLM_PROVIDER") or "vllm").strip().lower()
 
-AGRINET_MODEL = FallbackModel(
-    ConcurrencyLimitedModel(
-        _make_vllm_model(os.environ["LLM_AGRINET_MODEL_NAME"], os.environ["VLLM_AGRINET_MODEL_URL"], agrinet_vllm_settings),
-        limiter=agrinet_limiter,
-    ),
-    azure_model,
-    fallback_on=(ModelAPIError, APIError, ConcurrencyLimitExceeded, UnexpectedModelBehavior),
+
+# Default to vLLM only (no Azure fallback).
+# If you want Azure again later, we can reintroduce it behind a flag.
+AGRINET_MODEL = ConcurrencyLimitedModel(
+    _make_vllm_model(os.environ["LLM_AGRINET_MODEL_NAME"], os.environ["VLLM_AGRINET_MODEL_URL"], agrinet_vllm_settings),
+    limiter=agrinet_limiter,
 )
+logger.info(f"AGRINET_MODEL provider selected: {_provider()}")
+logger.info(f"AGRINET vLLM URL (raw): {os.getenv('VLLM_AGRINET_MODEL_URL')}")
+
+# Allow switching to Azure explicitly (still no fallback).
+if _provider() == "azure":
+    AGRINET_MODEL = _make_azure_model()
 
 # MODERATION_MODEL = FallbackModel(
 #     ConcurrencyLimitedModel(
