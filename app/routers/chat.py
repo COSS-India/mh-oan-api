@@ -55,16 +55,24 @@ async def chat_endpoint(
     history = await _get_message_history(session_id)
     logger.debug(f"Retrieved message history for session {session_id} - length: {len(history)}")
 
+    text_iter = stream_chat_messages(
+        query=chat_request.query,
+        session_id=session_id,
+        source_lang=chat_request.source_lang,
+        target_lang=chat_request.target_lang,
+        user_id=chat_request.user_id,
+        history=history,
+        user_info=user_info,
+        background_tasks=background_tasks
+    )
+
+    # If the client explicitly requests SSE, wrap as proper event-stream frames.
+    accept = (request.headers.get("accept") or "").lower()
+    wants_sse = "text/event-stream" in accept
+    body_iter = _as_sse(text_iter) if wants_sse else text_iter
+    media_type = "text/event-stream" if wants_sse else "text/plain; charset=utf-8"
+
     return StreamingResponse(
-        _as_sse(stream_chat_messages(
-            query=chat_request.query,
-            session_id=session_id,
-            source_lang=chat_request.source_lang,
-            target_lang=chat_request.target_lang,
-            user_id=chat_request.user_id,
-            history=history,
-            user_info=user_info,
-            background_tasks=background_tasks
-        )),
-        media_type="text/event-stream"
+        body_iter,
+        media_type=media_type,
     )
