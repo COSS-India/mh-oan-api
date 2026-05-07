@@ -58,7 +58,23 @@ def _vllm_openai_api_key() -> str:
     return key if key else "not-required"
 
 
+def _normalize_openai_base_url(url: str) -> str:
+    """
+    AsyncOpenAI(base_url=...) expects an API *root* (e.g. .../v1 or .../api/v1).
+    Allow operators to accidentally (or intentionally) provide the full endpoint
+    (.../chat/completions) by trimming it back to the root.
+    """
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return u
+    suffix = "/chat/completions"
+    if u.endswith(suffix):
+        return u[: -len(suffix)]
+    return u
+
+
 def _make_vllm_model(model_name, base_url, settings):
+    base_url = _normalize_openai_base_url(base_url)
     return OpenAIChatModel(
         model_name,
         provider=OpenAIProvider(openai_client=AsyncOpenAI(

@@ -28,10 +28,17 @@ class Settings(BaseSettings):
     allowed_methods: List[str] = ["*"]
     allowed_headers: List[str] = ["*"]
 
+    # Static API key (optional). When set, Authorization: Bearer <STATIC_API_KEY> is accepted.
+    static_api_key: Optional[str] = os.getenv("STATIC_API_KEY") or None
+
     # JWT Configuration
     jwt_algorithm: str = "RS256"
     jwt_public_key_path: str = os.getenv("JWT_PUBLIC_KEY_PATH", "jwt_public_key.pem")
     jwt_private_key_path: Optional[str] = os.getenv("JWT_PRIVATE_KEY_PATH")
+    jwt_verify_aud: bool = os.getenv("JWT_VERIFY_AUD", "false").lower() == "true"
+    jwt_verify_iss: bool = os.getenv("JWT_VERIFY_ISS", "false").lower() == "true"
+    jwt_audience: Optional[str] = os.getenv("JWT_AUDIENCE") or None
+    jwt_issuer: Optional[str] = os.getenv("JWT_ISSUER") or None
 
     # Worker Settings
     uvicorn_workers: int = os.cpu_count() or 1

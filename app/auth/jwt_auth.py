@@ -54,21 +54,31 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    # Allow static API key auth (when configured)
+    if token and settings.static_api_key and token == settings.static_api_key:
+        return {"auth_type": "static_api_key"}
+
     if public_key is None:
         logger.error("JWT Public Key is not loaded, cannot verify tokens.")
         raise credentials_exception
         
     try:
-        decoded_token = jwt.decode(
-            token,
-            public_key,
-            algorithms=[settings.jwt_algorithm],
-            options={
+        decode_kwargs = {
+            "key": public_key,
+            "algorithms": [settings.jwt_algorithm],
+            "options": {
                 "verify_signature": True,
-                "verify_aud": True,
-                "verify_iss": True
-            }
-        )
+                "verify_aud": settings.jwt_verify_aud,
+                "verify_iss": settings.jwt_verify_iss,
+            },
+        }
+
+        if settings.jwt_verify_aud and settings.jwt_audience:
+            decode_kwargs["audience"] = settings.jwt_audience
+        if settings.jwt_verify_iss and settings.jwt_issuer:
+            decode_kwargs["issuer"] = settings.jwt_issuer
+
+        decoded_token = jwt.decode(token, **decode_kwargs)
         
         logger.info(f"Decoded token: {decoded_token}")
         
