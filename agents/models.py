@@ -58,6 +58,25 @@ def _vllm_openai_api_key() -> str:
     return key if key else "not-required"
 
 
+def _vllm_default_headers() -> dict[str, str]:
+    """
+    Optional headers for OpenAI-compatible gateways sitting in front of vLLM.
+    Some deployments require custom headers (e.g. X-Try-It or tenant headers).
+    """
+    headers: dict[str, str] = {}
+
+    # Match the user's curl header when enabled
+    if (os.getenv("VLLM_SEND_X_TRY_IT") or "").strip().lower() in {"1", "true", "yes"}:
+        headers["X-Try-It"] = "true"
+
+    # Some gateways require an explicit tenant header in addition to JWT claims
+    tenant_id = (os.getenv("VLLM_TENANT_ID") or "").strip()
+    if tenant_id:
+        headers["X-Tenant-Id"] = tenant_id
+
+    return headers
+
+
 def _normalize_openai_base_url(url: str) -> str:
     """
     AsyncOpenAI(base_url=...) expects an API *root* (e.g. .../v1 or .../api/v1).
@@ -80,6 +99,7 @@ def _make_vllm_model(model_name, base_url, settings):
         provider=OpenAIProvider(openai_client=AsyncOpenAI(
             base_url=base_url,
             api_key=_vllm_openai_api_key(),
+            default_headers=_vllm_default_headers(),
             http_client=http_client,
             max_retries=0,
         )),
