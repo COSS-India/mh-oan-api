@@ -1,12 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal
-from pydantic_ai import Agent, PromptedOutput
-from helpers.utils import get_prompt
-from pydantic_ai.models import ModelSettings
-from agents.models import MODERATION_MODEL
-from dotenv import load_dotenv
 
-load_dotenv()
 
 class QueryModerationResult(BaseModel):
     """Moderation result of the query."""
@@ -29,14 +23,14 @@ class QueryModerationResult(BaseModel):
             tick = "❌"
         return f"**Moderation Compliance:** {tick} {self.action} ({category_str})"
 
-moderation_agent = Agent(
-    model=MODERATION_MODEL,
-    name="Moderation Agent",
-    system_prompt=get_prompt('moderation_system'),
-    instrument=True,
-    output_type=PromptedOutput(QueryModerationResult),
-    retries=3,
-    model_settings=ModelSettings(
-        request_limit=5,
-    )
-)
+# moderation_agent = Agent(
+#     model=MODERATION_MODEL,
+#     name="Moderation Agent",
+#     system_prompt=get_prompt('moderation_system'),
+#     instrument=True,
+#     output_type=PromptedOutput(QueryModerationResult),
+#     retries=3,
+#     model_settings=ModelSettings(
+#         request_limit=5,
+#     )
+# )

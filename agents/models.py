@@ -9,7 +9,7 @@ from pydantic_ai.exceptions import ModelAPIError, ConcurrencyLimitExceeded, Unex
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.models.openai import OpenAIChatModelSettings
+# from pydantic_ai.models.openai import OpenAIChatModelSettings  # moderation disabled
 from pydantic_ai.concurrency import ConcurrencyLimiter
 from dotenv import load_dotenv
 from helpers.utils import get_logger
@@ -39,17 +39,23 @@ agrinet_vllm_settings = ModelSettings(
     },
 )
 
-moderation_vllm_settings = OpenAIChatModelSettings(
-    temperature=1.0,
-    top_p=1.0,
-    openai_reasoning_effort='low',
-)
+# moderation_vllm_settings = OpenAIChatModelSettings(
+#     temperature=1.0,
+#     top_p=1.0,
+#     openai_reasoning_effort='low',
+# )
 
 azure_settings = ModelSettings(extra_body=None)
 
 http_client = httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=2.0))
 agrinet_limiter = ConcurrencyLimiter(max_running=int(os.getenv('VLLM_AGRINET_MAX_CONCURRENT', '60')), max_queued=0, name='agrinet-vllm')
-moderation_limiter = ConcurrencyLimiter(max_running=int(os.getenv('VLLM_MODERATION_MAX_CONCURRENT', '100')), max_queued=0, name='moderation-vllm')
+# moderation_limiter = ConcurrencyLimiter(max_running=int(os.getenv('VLLM_MODERATION_MAX_CONCURRENT', '100')), max_queued=0, name='moderation-vllm')
+
+
+def _vllm_openai_api_key() -> str:
+    """vLLM gateways often validate Bearer tokens; use VLLM_API_KEY when set."""
+    key = (os.getenv("VLLM_API_KEY") or "").strip()
+    return key if key else "not-required"
 
 
 def _make_vllm_model(model_name, base_url, settings):
@@ -57,7 +63,7 @@ def _make_vllm_model(model_name, base_url, settings):
         model_name,
         provider=OpenAIProvider(openai_client=AsyncOpenAI(
             base_url=base_url,
-            api_key="not-required",
+            api_key=_vllm_openai_api_key(),
             http_client=http_client,
             max_retries=0,
         )),
@@ -88,11 +94,11 @@ AGRINET_MODEL = FallbackModel(
     fallback_on=(ModelAPIError, APIError, ConcurrencyLimitExceeded, UnexpectedModelBehavior),
 )
 
-MODERATION_MODEL = FallbackModel(
-    ConcurrencyLimitedModel(
-        _make_vllm_model(os.environ["LLM_MODERATION_MODEL_NAME"], os.environ["VLLM_MODERATION_MODEL_URL"], moderation_vllm_settings),
-        limiter=moderation_limiter,
-    ),
-    azure_model,
-    fallback_on=(ModelAPIError, APIError, ConcurrencyLimitExceeded, UnexpectedModelBehavior),
-)
+# MODERATION_MODEL = FallbackModel(
+#     ConcurrencyLimitedModel(
+#         _make_vllm_model(os.environ["LLM_MODERATION_MODEL_NAME"], os.environ["VLLM_MODERATION_MODEL_URL"], moderation_vllm_settings),
+#         limiter=moderation_limiter,
+#     ),
+#     azure_model,
+#     fallback_on=(ModelAPIError, APIError, ConcurrencyLimitExceeded, UnexpectedModelBehavior),
+# )

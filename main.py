@@ -1,10 +1,15 @@
 from dotenv import load_dotenv
+
+load_dotenv()
+
+from helpers.otel_env import normalize_otlp_endpoint_env
+
+normalize_otlp_endpoint_env()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from contextlib import asynccontextmanager
-
-load_dotenv()
 
 # Import all routers
 from app.routers import chat, transcribe, suggestions, tts, health

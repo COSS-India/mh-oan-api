@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from fastapi import BackgroundTasks
 from agents.agrinet import agrinet_agent
-from agents.moderation import moderation_agent
+# from agents.moderation import moderation_agent  # moderation pipeline disabled
 from helpers.utils import get_logger
 from helpers.translation import translation_service, BhashiniTranslator, markdown_to_chunks, chunks_to_markdown
 from app.utils import (
@@ -9,9 +9,6 @@ from app.utils import (
     trim_history, 
     format_message_pairs
 )
-from helpers.telemetry import create_moderation_event, TelemetryRequest
-from app.tasks.telemetry import send_telemetry
-from app.tasks.suggestions import create_suggestions
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -58,22 +55,24 @@ async def stream_chat_messages(
     else:
         last_response = ""
     
-    try:
-        user_message    = f"{last_response}{deps.get_user_message()}"
-        moderation_result = await moderation_agent.run(user_message)
-        moderation_data = moderation_result.output
-        logger.info(f"Moderation data: {moderation_data}")
-
-        if moderation_data.category == "valid_agricultural":
-            logger.info(f"Triggering suggestions generation for session {session_id}")
-            try:
-                background_tasks.add_task(create_suggestions, session_id, target_lang)
-                logger.info("Successfully added suggestions task")
-            except Exception as e:
-                logger.error(f"Error adding suggestions task: {str(e)}")
-        deps.update_moderation_str(str(moderation_data))
-    except Exception as e:
-        logger.error(f"Error in moderation: {str(e)}")
+    # --- Moderation agent disabled (MODERATION_MODEL commented in agents/models.py) ---
+    # try:
+    #     user_message = f"{last_response}{deps.get_user_message()}"
+    #     moderation_result = await moderation_agent.run(user_message)
+    #     moderation_data = moderation_result.output
+    #     logger.info(f"Moderation data: {moderation_data}")
+    #
+    #     if moderation_data.category == "valid_agricultural":
+    #         logger.info(f"Triggering suggestions generation for session {session_id}")
+    #         try:
+    #             background_tasks.add_task(create_suggestions, session_id, target_lang)
+    #             logger.info("Successfully added suggestions task")
+    #         except Exception as e:
+    #             logger.error(f"Error adding suggestions task: {str(e)}")
+    #     deps.update_moderation_str(str(moderation_data))
+    # except Exception as e:
+    #     logger.error(f"Error in moderation: {str(e)}")
+    logger.info("Moderation agent skipped (disabled)")
 
     user_message = deps.get_user_message()
     logger.info(f"Running agent with user message: {user_message}")
