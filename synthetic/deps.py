@@ -81,8 +81,14 @@ class FarmerContext(BaseModel):
             return "**Agristack Information Availability**: ❌"
 
     def get_user_message(self):
-        bhili = f'**User (Bhili):** "{self.bhili_query}"' if self.bhili_query else None
-        strings = [self._query_string(), bhili, self._language_string(), self._moderation_string(), self._agristack_availability_string()]
+        if self.bhili_query:
+            # Relabel Marathi as "(Marathi)" so the LLM clearly distinguishes
+            # it from the Bhili line and uses Bhili for search_terms.
+            user_line = f'**User (Marathi):** "{self.query}"'
+            bhili_line = f'**User (Bhili):** "{self.bhili_query}"'
+            strings = [user_line, bhili_line, self._language_string(), self._moderation_string(), self._agristack_availability_string()]
+        else:
+            strings = [self._query_string(), self._language_string(), self._moderation_string(), self._agristack_availability_string()]
         return "\n".join([x for x in strings if x])
 
     def get_today_date_str(self) -> str:
@@ -230,9 +236,14 @@ def load_conversation(session_id: str, data_dir: Path = DEFAULT_DATA_DIR) -> dic
         raise FileNotFoundError(f"Conversation {session_id} not found in {data_dir}")
 
     # Deserialise the agrinet message history
-    raw_messages = record.get("agrinet_messages_json", "[]")
+    use_mr = (
+        record.get("env", {}).get("target_language") == "bhb"
+        and record.get("agrinet_messages_mr_json")
+    )
+
+    raw_messages = record.get("agrinet_messages_mr_json" if use_mr else "agrinet_messages_json", "[]")
     if isinstance(raw_messages, str):
         raw_messages = json.loads(raw_messages)
-    record["agrinet_history"] = ModelMessagesTypeAdapter.validate_python(raw_messages)
 
+    record["agrinet_history"] = ModelMessagesTypeAdapter.validate_python(raw_messages)
     return record

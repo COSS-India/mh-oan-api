@@ -355,8 +355,8 @@ TARGET_LANGUAGE_WEIGHTS = {
 }
 
 LATIN_SCRIPT_PROBABILITY = 0.10  # Higher for MH — many farmers type Marathi in Roman
-SAME_LANGUAGE_PROBABILITY = 0.95
-LANGUAGE_SWITCH_PROBABILITY = 0.02
+SAME_LANGUAGE_PROBABILITY = 1.00
+LANGUAGE_SWITCH_PROBABILITY = 0.00
 
 
 # ─── Agristack / Farmer Profile Data ────────────────────────────────────────
