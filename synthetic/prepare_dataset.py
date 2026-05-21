@@ -18,7 +18,7 @@ from datasets import Dataset, Features, Value
 
 DATA_DIR = Path("data/synthetic")
 OUTPUT_DIR = Path("data/hf_dataset")
-HF_REPO = "kenpath/mh-synthetic-v1"
+HF_REPO = "kenpath/bhili-synthetic-v1"
 
 
 # ── OpenAI chat completions format conversion ───────────────────────────
