@@ -42,6 +42,7 @@ agrinet_vllm_settings = ModelSettings(
 moderation_vllm_settings = OpenAIChatModelSettings(
     temperature=1.0,
     top_p=1.0,
+    max_tokens=1024,
     openai_reasoning_effort='low',
 )
 
