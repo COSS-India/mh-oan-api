@@ -16,10 +16,9 @@ TOOLS = [
     # Search Terms
     Tool(
         search_terms,
-        takes_ctx=False,
-        docstring_format='auto', 
+        takes_ctx=True,
+        docstring_format='auto',
         require_parameter_descriptions=True,
-
     ),
 
     # Search Documents
