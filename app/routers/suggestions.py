@@ -14,10 +14,11 @@ async def suggest(request: SuggestionsRequest = Depends(), user_info: dict = Dep
     Get suggestions for a conversation session.
     If suggestions are not cached, trigger creation asynchronously.
     """
-    cache_lang = "en" if request.target_lang == "bhb" else request.target_lang
+    # Bhili UI uses bhb; suggestions are generated in mr (see chat flow), then mr → bhb here.
+    cache_lang = "mr" if request.target_lang == "bhb" else request.target_lang
     cache_key = f"suggestions_{request.session_id}_{cache_lang}"
     suggestions = await get_cache(cache_key) or []
     if request.target_lang == "bhb" and suggestions:
-        translator = BhashiniTranslator(source_lang="en", target_lang="bhb")
+        translator = BhashiniTranslator(source_lang="mr", target_lang="bhb")
         suggestions = await translator.translate(suggestions)
     return JSONResponse(suggestions)
