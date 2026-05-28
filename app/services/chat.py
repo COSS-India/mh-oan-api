@@ -31,8 +31,14 @@ from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
 
-MODEL_NAME = (
+AGRINET_MODEL_NAME = (
     os.getenv("LLM_AGRINET_MODEL_NAME")
+    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+    or os.getenv("LLM_MODEL_NAME")
+)
+
+MODERATION_MODEL_NAME = (
+    os.getenv("LLM_MODERATION_MODEL_NAME")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
     or os.getenv("LLM_MODEL_NAME")
 )
@@ -79,7 +85,7 @@ async def stream_chat_messages(
     logger.info(f"User info: {user_info}")
 
     lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
-    trace_tags = [f"env:{lf_env}", *([f"model:{MODEL_NAME}"] if MODEL_NAME else [])]
+    trace_tags = [f"env:{lf_env}", *([f"model:{AGRINET_MODEL_NAME}"] if AGRINET_MODEL_NAME else [])]
 
     lf_client = get_client()
 
@@ -191,7 +197,7 @@ async def _run_moderation(user_message: str, session_id: str):
 
     lf_update_current_observation(
         output=str(run.output),
-        model=MODEL_NAME,
+        model=MODERATION_MODEL_NAME,
         request_tokens=usage_data.request_tokens or 0,
         response_tokens=usage_data.response_tokens or 0,
         metadata={},
@@ -292,7 +298,7 @@ async def _run_agrinet_stream(
             # Runs on normal exhaustion AND on early .aclose() (client disconnect).
             lf_update_current_observation(
                 output=full_output,
-                model=MODEL_NAME,
+                model=AGRINET_MODEL_NAME,
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 metadata={},
