@@ -85,7 +85,7 @@ async def stream_chat_messages(
     logger.info(f"User info: {user_info}")
 
     lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
-    trace_tags = [f"env:{lf_env}", *([f"model:{AGRINET_MODEL_NAME}"] if AGRINET_MODEL_NAME else [])]
+    trace_tags = [f"env:{lf_env}"]
 
     lf_client = get_client()
 
@@ -197,7 +197,7 @@ async def _run_moderation(user_message: str, session_id: str):
 
     lf_update_current_observation(
         output=str(run.output),
-        model=MODERATION_MODEL_NAME,
+        model=next((m.model_name for m in reversed(run.all_messages()) if m.model_name), MODERATION_MODEL_NAME),
         request_tokens=usage_data.request_tokens or 0,
         response_tokens=usage_data.response_tokens or 0,
         metadata={},
@@ -298,12 +298,11 @@ async def _run_agrinet_stream(
             # Runs on normal exhaustion AND on early .aclose() (client disconnect).
             lf_update_current_observation(
                 output=full_output,
-                model=AGRINET_MODEL_NAME,
+                model=next((m.model_name for m in reversed(response_stream.all_messages()) if m.model_name), AGRINET_MODEL_NAME),
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 metadata={},
             )
-            lf_set_trace_io(output=full_output)
 
     # Reached only on normal exhaustion (not on .aclose()).
     # Persist the confirmed full response to message history.
