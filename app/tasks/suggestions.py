@@ -59,7 +59,6 @@ async def create_suggestions(
         lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
         trace_tags = [
             f"env:{lf_env}",
-            *([f"model:{_MODEL_NAME}"] if _MODEL_NAME else []),
             "task:suggestions",
         ]
         trace_metadata: dict[str, str] = {
