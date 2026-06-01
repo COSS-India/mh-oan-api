@@ -205,7 +205,7 @@ def main():
 
     # Push to Hugging Face Hub
     print(f"\nPushing to HF Hub: {HF_REPO} ...")
-    ds.push_to_hub(HF_REPO)
+    ds.push_to_hub(HF_REPO, private=True)
     print(f"Pushed to https://huggingface.co/datasets/{HF_REPO}")
 
 

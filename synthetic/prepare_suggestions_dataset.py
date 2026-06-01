@@ -17,7 +17,7 @@ from datasets import Dataset, Features, Value, concatenate_datasets, load_from_d
 
 SUGGESTIONS_DIR = Path("data/suggestions")
 MAIN_DATASET_DIR = Path("data/hf_dataset")
-HF_REPO = "kenpath/mh-synthetic-v1"
+HF_REPO = "kenpath/bhili-synthetic-v1"
 
 FEATURES = Features({
     "session_id": Value("string"),
