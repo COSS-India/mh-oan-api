@@ -55,7 +55,7 @@ class Location(BaseModel):
         return f"{self.place_name} ({self.latitude}, {self.longitude})"
     
 
-@observe(name="tool:formward_geocode",as_type="tool")
+@observe(name="tool:forward_geocode",as_type="tool")
 async def forward_geocode(place_name: str) -> Optional[Location]:
     """Forward Geocoding to get latitude and longitude from place name.
 
