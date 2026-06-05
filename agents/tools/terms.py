@@ -15,7 +15,7 @@ from agents.deps import FarmerContext
 # Load real term pairs
 term_pairs = json.load(open('assets/glossary_terms.json', 'r', encoding='utf-8'))
 
-SUPPORTED_LANGS = ("en", "hi", "mr", "transliteration")
+SUPPORTED_LANGS = ("en", "hi", "mr", "bhb", "transliteration")
 
 # Cap how many times `search_terms` can be called within a single user turn.
 # Resets at the next user message. Tweak here to tune the loop-prevention.
@@ -41,6 +41,7 @@ class Language(str, Enum):
     ENGLISH = "en"
     HINDI = "hi"
     MARATHI = "mr"
+    BHILI = "bhb"
     TRANSLITERATION = "transliteration"
 
 
@@ -48,6 +49,7 @@ class TermPair(BaseModel):
     en: str = Field(description="English term")
     mr: str = Field(default="", description="Marathi term")
     hi: str = Field(default="", description="Hindi term")
+    bhb: str = Field(default="", description="Bhili term")
     transliteration: str = Field(default="", description="Transliteration to English")
 
     def get_term(self, lang: str) -> str:
@@ -66,7 +68,7 @@ class TermPair(BaseModel):
 
 
 # Convert raw dictionaries to TermPair objects
-TERM_PAIRS = [TermPair(**{k: v for k, v in pair.items() if k in ("en", "mr", "hi", "transliteration")}) for pair in term_pairs]
+TERM_PAIRS = [TermPair(**{k: v for k, v in pair.items() if k in ("en", "mr", "hi", "bhb", "transliteration")}) for pair in term_pairs]
 
 @observe(name="tool:search_terms", as_type="tool")
 async def search_terms(
@@ -82,7 +84,7 @@ async def search_terms(
         term: The term to search for
         max_results: Maximum number of results to return
         threshold: Minimum similarity score (0-1) to consider a match (default is 0.7)
-        language: Optional language to restrict search to (en/hi/mr/transliteration)
+        language: Optional language to restrict search to (en/hi/mr/bhb/transliteration)
 
     Returns:
         str: Formatted string with matching results and their scores

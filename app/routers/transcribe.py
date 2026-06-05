@@ -22,7 +22,8 @@ async def transcribe(request: Request, transcribe_request: TranscribeRequest = B
 #    current_timestamp = int(time.time() * 1000)
     
     if transcribe_request.service_type == 'bhashini':
-        lang_code = 'mr' if transcribe_request.selected_lang == 'bhb' else transcribe_request.selected_lang
+        # lang_code = 'mr' if transcribe_request.selected_lang == 'bhb' else transcribe_request.selected_lang
+        lang_code = transcribe_request.selected_lang
         transcription = transcribe_bhashini(transcribe_request.audio_content, lang_code, transcribe_request.selected_lang)
         logger.info(f"Transcription: {transcription}")
     else:

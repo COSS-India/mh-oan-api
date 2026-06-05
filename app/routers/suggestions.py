@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from app.models.requests import SuggestionsRequest
 from app.utils import get_cache
 from app.auth.jwt_auth import get_current_user
-from helpers.translation import BhashiniTranslator
+# from helpers.translation import BhashiniTranslator
 
 router = APIRouter(prefix="/suggest", tags=["suggest"],)
 
@@ -14,11 +14,11 @@ async def suggest(request: SuggestionsRequest = Depends(), user_info: dict = Dep
     Get suggestions for a conversation session.
     If suggestions are not cached, trigger creation asynchronously.
     """
-    # Bhili UI uses bhb; suggestions are generated in mr (see chat flow), then mr → bhb here.
-    cache_lang = "mr" if request.target_lang == "bhb" else request.target_lang
-    cache_key = f"suggestions_{request.session_id}_{cache_lang}"
+    # Bhili NMT disabled — suggestions generated and cached directly in bhb.
+    # cache_lang = "mr" if request.target_lang == "bhb" else request.target_lang
+    cache_key = f"suggestions_{request.session_id}_{request.target_lang}"
     suggestions = await get_cache(cache_key) or []
-    if request.target_lang == "bhb" and suggestions:
-        translator = BhashiniTranslator(source_lang="mr", target_lang="bhb")
-        suggestions = await translator.translate(suggestions)
+    # if request.target_lang == "bhb" and suggestions:
+    #     translator = BhashiniTranslator(source_lang="mr", target_lang="bhb")
+    #     suggestions = await translator.translate(suggestions)
     return JSONResponse(suggestions)

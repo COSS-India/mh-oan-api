@@ -13,12 +13,13 @@ from helpers.langfuse_trace_schema import (
 )
 from helpers.langfuse_tracing import lf_set_trace_io, lf_update_current_observation
 from helpers.utils import get_logger
-from helpers.translation import (
-    translation_service,
-    BhashiniTranslator,
-    markdown_to_chunks,
-    chunks_to_markdown,
-)
+# Bhili NMT translation layer disabled — fine-tuned model responds directly in bhb.
+# from helpers.translation import (
+#     translation_service,
+#     BhashiniTranslator,
+#     markdown_to_chunks,
+#     chunks_to_markdown,
+# )
 from helpers import langfuse_helper  # noqa: F401 — initialises Langfuse env vars
 from app.utils import (
     update_message_history,
@@ -55,12 +56,12 @@ CHAT_CHAIN_SPAN_NAME = "chain.chat"
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _translate_paragraph(text: str, source_lang: str, target_lang: str) -> str:
-    """Translate a paragraph, preserving markdown structure."""
-    chunks = markdown_to_chunks(text)
-    translator = BhashiniTranslator(source_lang=source_lang, target_lang=target_lang)
-    translated_chunks = await translator.translate(chunks, exclude_keys={"start", "end"})
-    return chunks_to_markdown(translated_chunks)
+# async def _translate_paragraph(text: str, source_lang: str, target_lang: str) -> str:
+#     """Translate a paragraph, preserving markdown structure."""
+#     chunks = markdown_to_chunks(text)
+#     translator = BhashiniTranslator(source_lang=source_lang, target_lang=target_lang)
+#     translated_chunks = await translator.translate(chunks, exclude_keys={"start", "end"})
+#     return chunks_to_markdown(translated_chunks)
 
 
 # ---------------------------------------------------------------------------
@@ -110,13 +111,14 @@ async def stream_chat_messages(
             lf_set_trace_io(input=query)
 
             # ------------------------------------------------------------------
-            # Bhb (Bhili): translate query bhb → mr before processing
+            # Bhb (Bhili): translate query bhb → mr before processing (disabled)
+            # Bhili now flows like mr/hi/en — query and response stay in bhb.
             # ------------------------------------------------------------------
-            is_bhili = source_lang == "bhb"
-            if is_bhili:
-                query = await translation_service.translate_text(query, source_lang, "mr")
-                logger.info(f"Bhb query translated to Marathi: {query}")
-                target_lang = "mr"
+            # is_bhili = source_lang == "bhb"
+            # if is_bhili:
+            #     query = await translation_service.translate_text(query, source_lang, "mr")
+            #     logger.info(f"Bhb query translated to Marathi: {query}")
+            #     target_lang = "mr"
 
             deps = FarmerContext(
                 query=query,
@@ -173,7 +175,6 @@ async def stream_chat_messages(
                     session_id=session_id,
                     user_id=user_id,
                     moderation_category=moderation_data.category,
-                    is_bhili=is_bhili,
                 ):
                     yield chunk
 
@@ -217,7 +218,6 @@ async def _run_agrinet_stream(
     session_id: str,
     user_id: str,
     moderation_category: str,
-    is_bhili: bool,
 ) -> AsyncGenerator[str, None]:
     """
     Run agrinet agent in true streaming mode — child span of chain.chat.
@@ -261,26 +261,25 @@ async def _run_agrinet_stream(
                 deps=deps,
             ) as response_stream:
 
-                if is_bhili:
-                    # Buffer paragraph-by-paragraph so Bhashini receives complete
-                    # sentences, then translate each paragraph (mr → bhb) before yielding.
-                    buffer = ""
-                    async for chunk in response_stream.stream_text(delta=True):
-                        buffer += chunk
-                        while "\n\n" in buffer:
-                            paragraph, buffer = buffer.split("\n\n", 1)
-                            translated = await _translate_paragraph(paragraph, "mr", "bhb")
-                            full_output += translated + "\n\n"
-                            yield translated + "\n\n"
-                    # Flush remaining tail (no trailing double-newline)
-                    if buffer.strip():
-                        translated_tail = await _translate_paragraph(buffer, "mr", "bhb")
-                        full_output += translated_tail
-                        yield translated_tail
-                else:
-                    async for chunk in response_stream.stream_text(delta=True):
-                        full_output += chunk
-                        yield chunk
+                # if is_bhili:
+                #     # Buffer paragraph-by-paragraph so Bhashini receives complete
+                #     # sentences, then translate each paragraph (mr → bhb) before yielding.
+                #     buffer = ""
+                #     async for chunk in response_stream.stream_text(delta=True):
+                #         buffer += chunk
+                #         while "\n\n" in buffer:
+                #             paragraph, buffer = buffer.split("\n\n", 1)
+                #             translated = await _translate_paragraph(paragraph, "mr", "bhb")
+                #             full_output += translated + "\n\n"
+                #             yield translated + "\n\n"
+                #     if buffer.strip():
+                #         translated_tail = await _translate_paragraph(buffer, "mr", "bhb")
+                #         full_output += translated_tail
+                #         yield translated_tail
+                # else:
+                async for chunk in response_stream.stream_text(delta=True):
+                    full_output += chunk
+                    yield chunk
 
                 logger.info(f"Streaming complete for session {session_id}")
                 new_messages = response_stream.new_messages()
