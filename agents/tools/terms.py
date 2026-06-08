@@ -50,7 +50,7 @@ class TermPair(BaseModel):
     mr: str = Field(default="", description="Marathi term")
     hi: str = Field(default="", description="Hindi term")
     bhb: str = Field(default="", description="Bhili term")
-    transliteration: str = Field(default="", description="Transliteration to English")
+    transliteration: str = Field(default="", description="Bhili romanization (ITRANS of bhb)")
 
     def get_term(self, lang: str) -> str:
         """Get the term for a specific language code."""
