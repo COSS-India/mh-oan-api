@@ -11,7 +11,11 @@ from helpers.langfuse_trace_schema import (
     AGENT_VISTAAR,
     chat_trace_metadata_strings,
 )
-from helpers.langfuse_tracing import lf_set_trace_io, lf_update_current_observation
+from helpers.langfuse_tracing import (
+    build_agent_run_result_payload,
+    lf_set_trace_io,
+    lf_update_current_observation,
+)
 from helpers.utils import get_logger
 from helpers.translation import (
     translation_service,
@@ -31,14 +35,8 @@ from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
 
-AGRINET_MODEL_NAME = (
+MODEL_NAME = (
     os.getenv("LLM_AGRINET_MODEL_NAME")
-    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-    or os.getenv("LLM_MODEL_NAME")
-)
-
-MODERATION_MODEL_NAME = (
-    os.getenv("LLM_MODERATION_MODEL_NAME")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
     or os.getenv("LLM_MODEL_NAME")
 )
@@ -85,7 +83,7 @@ async def stream_chat_messages(
     logger.info(f"User info: {user_info}")
 
     lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
-    trace_tags = [f"env:{lf_env}"]
+    trace_tags = [f"env:{lf_env}", *([f"model:{MODEL_NAME}"] if MODEL_NAME else [])]
 
     lf_client = get_client()
 
@@ -106,17 +104,17 @@ async def stream_chat_messages(
         with lf_client.start_as_current_observation(
             as_type="chain",
             name=CHAT_CHAIN_SPAN_NAME,
-        ):
+        ) as chain_span:
             lf_set_trace_io(input=query)
 
             # ------------------------------------------------------------------
-            # Bhb (Bhili): translate query bhb → mr before processing
+            # Bhili: translate query → English before processing
             # ------------------------------------------------------------------
             is_bhili = source_lang == "bhb"
             if is_bhili:
-                query = await translation_service.translate_text(query, source_lang, "mr")
-                logger.info(f"Bhb query translated to Marathi: {query}")
-                target_lang = "mr"
+                query = await translation_service.translate_text(query, source_lang, "en")
+                logger.info(f"Bhili query translated to English: {query}")
+                target_lang = "en"
 
             deps = FarmerContext(
                 query=query,
@@ -164,18 +162,26 @@ async def stream_chat_messages(
             # ------------------------------------------------------------------
             # Main agent — true streaming, child span via manual observation
             # ------------------------------------------------------------------
-            with propagate_attributes(tags=[moderation_data.category]):
-                async for chunk in _run_agrinet_stream(
-                    user_message=deps.get_user_message(),
-                    trimmed_history=trimmed_history,
-                    history=history,
-                    deps=deps,
-                    session_id=session_id,
-                    user_id=user_id,
-                    moderation_category=moderation_data.category,
-                    is_bhili=is_bhili,
-                ):
-                    yield chunk
+            full_output = ""
+            try:
+                with propagate_attributes(tags=[moderation_data.category]):
+                    async for chunk in _run_agrinet_stream(
+                        user_message=deps.get_user_message(),
+                        trimmed_history=trimmed_history,
+                        history=history,
+                        deps=deps,
+                        session_id=session_id,
+                        user_id=user_id,
+                        moderation_category=moderation_data.category,
+                        is_bhili=is_bhili,
+                    ):
+                        full_output += chunk
+                        yield chunk
+            finally:
+                # Set trace + root span output here (same OTel context as input).
+                # update_current_trace from nested async generators does not persist.
+                chain_span.update(output=full_output)
+                lf_set_trace_io(output=full_output)
 
             lf_client.flush()
 
@@ -197,7 +203,7 @@ async def _run_moderation(user_message: str, session_id: str):
 
     lf_update_current_observation(
         output=str(run.output),
-        model=next((m.model_name for m in reversed(run.all_messages()) if m.model_name), MODERATION_MODEL_NAME),
+        model=MODEL_NAME,
         request_tokens=usage_data.request_tokens or 0,
         response_tokens=usage_data.response_tokens or 0,
         metadata={},
@@ -223,9 +229,9 @@ async def _run_agrinet_stream(
     Run agrinet agent in true streaming mode — child span of chain.chat.
 
     Yields individual text chunks as they arrive from the model (no buffering).
-    Langfuse span input is set before the first yield; output + usage are set
-    inside a finally block so the span is always closed correctly even on early
-    client disconnect.
+    Langfuse span input is set before the first yield; span output + usage are set
+    in a finally block. Trace-level output is set by stream_chat_messages after
+    streaming completes (same context as trace input).
 
     Uses start_as_current_observation (not @observe) so current span exists
     across async-generator yields.
@@ -251,6 +257,9 @@ async def _run_agrinet_stream(
 
         full_output = ""
         new_messages = []
+        all_messages = []
+        usage = None
+        new_message_index = len(trimmed_history)
         request_tokens = 0
         response_tokens = 0
 
@@ -263,18 +272,18 @@ async def _run_agrinet_stream(
 
                 if is_bhili:
                     # Buffer paragraph-by-paragraph so Bhashini receives complete
-                    # sentences, then translate each paragraph (mr → bhb) before yielding.
+                    # sentences, then translate each paragraph before yielding.
                     buffer = ""
                     async for chunk in response_stream.stream_text(delta=True):
                         buffer += chunk
                         while "\n\n" in buffer:
                             paragraph, buffer = buffer.split("\n\n", 1)
-                            translated = await _translate_paragraph(paragraph, "mr", "bhb")
+                            translated = await _translate_paragraph(paragraph, "en", "bhb")
                             full_output += translated + "\n\n"
                             yield translated + "\n\n"
                     # Flush remaining tail (no trailing double-newline)
                     if buffer.strip():
-                        translated_tail = await _translate_paragraph(buffer, "mr", "bhb")
+                        translated_tail = await _translate_paragraph(buffer, "en", "bhb")
                         full_output += translated_tail
                         yield translated_tail
                 else:
@@ -284,6 +293,7 @@ async def _run_agrinet_stream(
 
                 logger.info(f"Streaming complete for session {session_id}")
                 new_messages = response_stream.new_messages()
+                all_messages = list(response_stream.all_messages())
 
                 # Usage is only available after the stream context exits.
                 try:
@@ -296,9 +306,16 @@ async def _run_agrinet_stream(
         finally:
             # Synchronous-only block: safe inside async generators on Python 3.9+.
             # Runs on normal exhaustion AND on early .aclose() (client disconnect).
-            lf_update_current_observation(
+            message_history = all_messages or [*trimmed_history, *filter_thinking_from_history(list(new_messages or []))]
+            run_result_payload = build_agent_run_result_payload(
                 output=full_output,
-                model=next((m.model_name for m in reversed(response_stream.all_messages()) if m.model_name), AGRINET_MODEL_NAME),
+                message_history=message_history,
+                usage=usage,
+                new_message_index=new_message_index,
+            )
+            lf_update_current_observation(
+                output=run_result_payload,
+                model=MODEL_NAME,
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 metadata={},

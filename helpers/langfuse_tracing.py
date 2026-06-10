@@ -2,10 +2,39 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from typing import Any, Mapping, Optional
+
+from pydantic_core import to_jsonable_python
 
 from helpers import langfuse_helper  # noqa: F401 — initializes Langfuse env before get_client()
 from langfuse import get_client
+
+
+def build_agent_run_result_payload(
+    *,
+    output: str,
+    message_history: list,
+    usage: Any | None = None,
+    new_message_index: int = 0,
+) -> dict[str, Any]:
+    """AgentRunResult-shaped dict for Langfuse agent.vistaar output (matches Pydantic AI serialization)."""
+    state: dict[str, Any] = {
+        "message_history": to_jsonable_python(message_history),
+        "retries": 0,
+    }
+    if usage is not None:
+        state["usage"] = asdict(usage) if is_dataclass(usage) else to_jsonable_python(usage)
+    else:
+        state["usage"] = {}
+
+    return {
+        "output": output,
+        "_output_tool_name": None,
+        "_state": state,
+        "_new_message_index": new_message_index,
+        "_traceparent_value": None,
+    }
 
 
 def lf_set_trace_io(*, input: Any = None, output: Any = None) -> None:
