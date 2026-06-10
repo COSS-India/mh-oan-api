@@ -11,7 +11,11 @@ from helpers.langfuse_trace_schema import (
     AGENT_VISTAAR,
     chat_trace_metadata_strings,
 )
-from helpers.langfuse_tracing import lf_set_trace_io, lf_update_current_observation
+from helpers.langfuse_tracing import (
+    build_agent_run_result_payload,
+    lf_set_trace_io,
+    lf_update_current_observation,
+)
 from helpers.utils import get_logger
 from helpers.translation import (
     translation_service,
@@ -100,7 +104,7 @@ async def stream_chat_messages(
         with lf_client.start_as_current_observation(
             as_type="chain",
             name=CHAT_CHAIN_SPAN_NAME,
-        ):
+        ) as chain_span:
             lf_set_trace_io(input=query)
 
             # ------------------------------------------------------------------
@@ -158,18 +162,26 @@ async def stream_chat_messages(
             # ------------------------------------------------------------------
             # Main agent — true streaming, child span via manual observation
             # ------------------------------------------------------------------
-            with propagate_attributes(tags=[moderation_data.category]):
-                async for chunk in _run_agrinet_stream(
-                    user_message=deps.get_user_message(),
-                    trimmed_history=trimmed_history,
-                    history=history,
-                    deps=deps,
-                    session_id=session_id,
-                    user_id=user_id,
-                    moderation_category=moderation_data.category,
-                    is_bhili=is_bhili,
-                ):
-                    yield chunk
+            full_output = ""
+            try:
+                with propagate_attributes(tags=[moderation_data.category]):
+                    async for chunk in _run_agrinet_stream(
+                        user_message=deps.get_user_message(),
+                        trimmed_history=trimmed_history,
+                        history=history,
+                        deps=deps,
+                        session_id=session_id,
+                        user_id=user_id,
+                        moderation_category=moderation_data.category,
+                        is_bhili=is_bhili,
+                    ):
+                        full_output += chunk
+                        yield chunk
+            finally:
+                # Set trace + root span output here (same OTel context as input).
+                # update_current_trace from nested async generators does not persist.
+                chain_span.update(output=full_output)
+                lf_set_trace_io(output=full_output)
 
             lf_client.flush()
 
@@ -217,9 +229,9 @@ async def _run_agrinet_stream(
     Run agrinet agent in true streaming mode — child span of chain.chat.
 
     Yields individual text chunks as they arrive from the model (no buffering).
-    Langfuse span input is set before the first yield; output + usage are set
-    inside a finally block so the span is always closed correctly even on early
-    client disconnect.
+    Langfuse span input is set before the first yield; span output + usage are set
+    in a finally block. Trace-level output is set by stream_chat_messages after
+    streaming completes (same context as trace input).
 
     Uses start_as_current_observation (not @observe) so current span exists
     across async-generator yields.
@@ -245,6 +257,9 @@ async def _run_agrinet_stream(
 
         full_output = ""
         new_messages = []
+        all_messages = []
+        usage = None
+        new_message_index = len(trimmed_history)
         request_tokens = 0
         response_tokens = 0
 
@@ -278,6 +293,7 @@ async def _run_agrinet_stream(
 
                 logger.info(f"Streaming complete for session {session_id}")
                 new_messages = response_stream.new_messages()
+                all_messages = list(response_stream.all_messages())
 
                 # Usage is only available after the stream context exits.
                 try:
@@ -290,14 +306,20 @@ async def _run_agrinet_stream(
         finally:
             # Synchronous-only block: safe inside async generators on Python 3.9+.
             # Runs on normal exhaustion AND on early .aclose() (client disconnect).
-            lf_update_current_observation(
+            message_history = all_messages or [*trimmed_history, *filter_thinking_from_history(list(new_messages or []))]
+            run_result_payload = build_agent_run_result_payload(
                 output=full_output,
+                message_history=message_history,
+                usage=usage,
+                new_message_index=new_message_index,
+            )
+            lf_update_current_observation(
+                output=run_result_payload,
                 model=MODEL_NAME,
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 metadata={},
             )
-            lf_set_trace_io(output=full_output)
 
     # Reached only on normal exhaustion (not on .aclose()).
     # Persist the confirmed full response to message history.
