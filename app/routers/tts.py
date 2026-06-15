@@ -5,7 +5,7 @@ from helpers.tts import text_to_speech_bhashini, text_to_speech_bhili
 import uuid
 import base64
 from helpers.utils import get_logger
-from app.auth.jwt_auth import get_current_user  # auth disabled
+from app.auth.jwt_auth import get_current_user
 from app.core.limiter import limiter
 logger = get_logger(__name__)
 
