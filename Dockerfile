@@ -7,13 +7,20 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     supervisor \
+    build-essential \
     gcc \
+    make \
     python3-dev \
+    libffi-dev \
+    libssl-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt .
+
+# Upgrade pip so prebuilt wheels (e.g. gevent on arm64) are preferred over source builds
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

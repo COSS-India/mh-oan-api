@@ -1,3 +1,4 @@
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,7 +13,7 @@ from app.config import settings
 from contextlib import asynccontextmanager
 
 # Import all routers
-from app.routers import chat, transcribe, suggestions, tts, health, openai_compat
+from app.routers import chat, transcribe, suggestions, tts, health, openai_compat, token
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,3 +64,8 @@ app.include_router(health.router, prefix=settings.api_prefix)
 
 # OpenAI-compatible endpoints (do not depend on settings.api_prefix)
 app.include_router(openai_compat.router, prefix="/api/v1")
+
+# Local/sandbox token minting (/api/token). Disable with ENABLE_TOKEN_MINT=false
+# once a real auth/SSO provider issues the token. See OAN_HOSTING_PLAN.md.
+if os.getenv("ENABLE_TOKEN_MINT", "true").lower() in {"1", "true", "yes"}:
+    app.include_router(token.router, prefix=settings.api_prefix)
