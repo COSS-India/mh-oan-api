@@ -18,6 +18,27 @@ load_dotenv()
 
 AZURE_OPENAI_API_VERSION = os.getenv('AZURE_OPENAI_API_VERSION', '2024-12-01-preview')
 
+# Registered ai4i Model Management Service id for the agrinet model. Forwarded
+# in the request body so the ai4i inference-service can stamp `service_id` onto
+# its ai-inference span — the PPU/Kafka billing consumer attributes usage from
+# that field. The ai4i LLM proxy pops `serviceId` before calling vLLM, so it
+# never reaches the upstream model.
+AI4I_AGRINET_SERVICE_ID = (os.getenv("AI4I_AGRINET_SERVICE_ID") or "").strip()
+
+_agrinet_extra_body = {
+    "top_k": 20,
+    "min_p": 0.0,
+    "repetition_penalty": 1.0,
+    "chat_template_kwargs": {"enable_thinking": False},
+}
+if AI4I_AGRINET_SERVICE_ID:
+    _agrinet_extra_body["serviceId"] = AI4I_AGRINET_SERVICE_ID
+else:
+    logger.warning(
+        "AI4I_AGRINET_SERVICE_ID is not set; ai4i traces will show a blank "
+        "service_id and PPU billing cannot attribute agrinet usage."
+    )
+
 agrinet_vllm_settings = ModelSettings(
     temperature=1.0,
     top_p=0.95,
@@ -30,12 +51,7 @@ agrinet_vllm_settings = ModelSettings(
         tool_calls_limit=15,
         total_tokens_limit=100_000,
     ),
-    extra_body={
-        "top_k": 20,
-        "min_p": 0.0,
-        "repetition_penalty": 1.0,
-        "chat_template_kwargs": {"enable_thinking": False},
-    },
+    extra_body=_agrinet_extra_body,
 )
 
 # moderation_vllm_settings = OpenAIChatModelSettings(
